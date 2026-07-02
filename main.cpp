@@ -4,6 +4,9 @@
 #include <iomanip>
 #include <vector>
 #include <sstream>
+#include <fstream>
+
+#include "picosha2.h"
 
 using namespace std;
 
@@ -16,6 +19,21 @@ struct FileRecord {
     string lastModifiedTime;
     string hash;
 };
+
+std::string calculate_sha256(const std::string& filepath)
+{
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file)
+        throw std::runtime_error("Cannot open file: " + filepath);
+
+    std::vector<unsigned char> buffer(
+        (std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>()
+    );
+
+    std::string hash = picosha2::hash256_hex_string(buffer.begin(), buffer.end());
+    return hash;
+}
 
 int main() {
 
@@ -34,6 +52,7 @@ int main() {
     // print out each file inside chosen directory
     for (const auto & entry : fs::directory_iterator(root))
     {
+
         // skip current if its not a normal file
         if (!entry.is_regular_file())
             continue;
@@ -62,13 +81,60 @@ int main() {
         new_file.relativePath = relative;
         new_file.size = fSize;
         new_file.lastModifiedTime = modTime.str();
-        new_file.hash = "";
+        new_file.hash = calculate_sha256(entry.path().string());
 
         files.push_back(new_file);
     };
+
+    // for each file, get file name, get file contents size in bytes
     for (const auto& f : files) 
     {
-        std::cout << f.relativePath << " | " << f.size << " bytes\n";
+        cout << f.relativePath << " | " << f.size << " bytes\n";
+
+        ifstream file(f.absolutePath, ios::binary);
+
+        // Ensure the file opened successfully
+        if (!file.is_open()) {
+            cout << "Error: Could not open the file." << std::endl;
+        }
+ 
+        // 2. Prepare a buffer to store the data
+        const size_t bufferSize = 1024;
+        vector<char> buffer(bufferSize);
+
+        // 3. Read data from the file
+        // This attempts to read up to 1024 bytes into the vector's memory
+        file.read(buffer.data(), buffer.size());
+
+        // 4. Confirm how many bytes were actually read
+        streamsize bytesRead = file.gcount();
+
+        // Output the results
+        cout << "Successfully read " << bytesRead << " bytes from the file." << std::endl;
+
+        // test hash:
+        string ogHash = f.hash;
+
+        cout << "\nOriginal hash: " << ogHash << endl;
+        cout << "alter file now please, press enter when done" << endl;
+        cin.get();
+
+
+        string newHash = calculate_sha256(f.absolutePath.string());
+        cout << "\nnew hash: " << newHash << endl;
+
+        if (ogHash == newHash)
+        {
+            cout << "\nfile unchanged" << endl;
+        }
+        else
+        {
+            cout << "\nfile modified" << endl;
+        }
+
+
+        
+        file.close();
     }
 
     std::cout << "\nTotal files scanned: " << files.size() << "\n";
