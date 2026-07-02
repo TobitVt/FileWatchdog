@@ -31,6 +31,7 @@ This version implements the first core building blocks:
   - Last modified timestamp
 - Storage of file data in structured `FileRecord` objects
 - Collection of file records using `std::vector`
+- SHA-256 hashing for file integrity verification
 
 ---
 
@@ -38,7 +39,6 @@ This version implements the first core building blocks:
 
 Future development will include:
 
-- SHA-256 hashing for file integrity verification
 - Baseline storage system (JSON / SQLite)
 - Change detection (new / modified / deleted files)
 - Qt GUI dashboard
