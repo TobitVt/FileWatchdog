@@ -7,9 +7,13 @@
 #include <stdexcept>
 #include <vector>
 
+#include "json.hpp"
+
 #include "picosha2.h"
 
+
 namespace fs = std::filesystem;
+using json = nlohmann::json;
 
 // Represents one file discovered during a scan.
 struct FileRecord {
@@ -20,11 +24,29 @@ struct FileRecord {
     std::string hash;           // SHA-256 hash of the file contents.
 };
 
+enum class ChangeType {
+    Unchanged,
+    Modified,
+    New,
+    Deleted
+};
+
 struct ChangeResult{
     std::string path;
-    std::string status;
+    ChangeType status;
+};
+
+std::string change_type_to_string(ChangeType type) {
+    switch (type) {
+        case ChangeType::Unchanged: return "unchanged";
+        case ChangeType::Modified: return "modified";
+        case ChangeType::New: return "new";
+        case ChangeType::Deleted: return "deleted";
+    }
+    return "unknown";
 }
-;
+
+
 // Computes the SHA-256 hash for a file.
 std::string calculate_sha256(const fs::path& filepath) {
     std::ifstream file(filepath, std::ios::binary);
@@ -90,14 +112,17 @@ bool save_baseline(const fs::path& baselinePath, const std::vector<FileRecord>& 
     if (!out) {
         return false;
     }
-
-    out << "relativePath|size|lastModifiedTime|hash\n";
+    json j = json::array();
     for (const auto& file : files) {
-        out << file.relativePath.string() << '|'
-            << file.size << '|'
-            << file.lastModifiedTime << '|'
-            << file.hash << '\n';
+        json jObj;
+        jObj["name"] = file.relativePath.string();
+        jObj["size"] = file.size;
+        jObj["lastModifiedTime"] = file.lastModifiedTime;
+        jObj["hash"] = file.hash;
+
+        j.push_back(jObj);
     }
+    out << j.dump(4);
 
     return true;
 }
@@ -115,7 +140,7 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
 
                 ChangeResult result;
                 result.path = oldFile.relativePath.string();
-                result.status = (oldFile.hash == newFile.hash) ? "unchanged" : "modified";
+                result.status = (oldFile.hash == newFile.hash) ? ChangeType::Unchanged : ChangeType::Modified;
                 results.push_back(result);
                 break;
             }
@@ -124,7 +149,7 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
         if (!found) {
             ChangeResult result;
             result.path = oldFile.relativePath.string();
-            result.status = "deleted";
+            result.status = ChangeType::Deleted;
             results.push_back(result);
         }
     }
@@ -142,7 +167,7 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
         if (!found) {
             ChangeResult result;
             result.path = newFile.relativePath.string();
-            result.status = "new";
+            result.status = ChangeType::New;
             results.push_back(result);
         }
     }
@@ -153,36 +178,23 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
 // Loads a previously saved baseline from disk.
 std::vector<FileRecord> load_baseline(const fs::path& baselinePath) {
     std::ifstream in(baselinePath);
+
     if (!in) {
-        throw std::runtime_error("Cannot open baseline file: " + baselinePath.string());
+        throw std::runtime_error("Cannot open file: " + baselinePath.string());
     }
 
+    json j;
+    in >> j;
+
     std::vector<FileRecord> files;
-    std::string line;
-    std::getline(in, line); // header
 
-    while (std::getline(in, line)) {
-        if (line.empty()) {
-            continue;
-        }
-
-        std::stringstream ss(line);
-        std::string relativePath;
-        std::string size;
-        std::string lastModifiedTime;
-        std::string hash;
-
-        std::getline(ss, relativePath, '|');
-        std::getline(ss, size, '|');
-        std::getline(ss, lastModifiedTime, '|');
-        std::getline(ss, hash, '|');
-
-        FileRecord record;
-        record.relativePath = fs::path(relativePath);
-        record.size = static_cast<std::uintmax_t>(std::stoull(size));
-        record.lastModifiedTime = lastModifiedTime;
-        record.hash = hash;
-        files.push_back(record);
+    for (const auto& obj : j) {
+        FileRecord file;
+        file.relativePath = fs::path(obj["name"].get<std::string>());
+        file.size = obj["size"].get<std::uintmax_t>();
+        file.hash = obj["hash"].get<std::string>();
+        file.lastModifiedTime = obj["lastModifiedTime"].get<std::string>();
+        files.push_back(file);
     }
 
     return files;
@@ -232,16 +244,36 @@ int main()
 
         // Step 3: Load the baseline back to prove the data was stored correctly.
         std::vector<FileRecord> loadedFile1 = load_baseline(baselinePath1);
-        std::cout << "Loaded " << loadedFile1.size() << " records from baseline 1.\n";
+        std::cout << "Loaded " << loadedFile1.size() << " records from baseline 1. contents:\n";
+
+        for (const auto& file : loadedFile1) {
+            json jObj;
+            jObj["name"] = file.relativePath.string();
+            jObj["size"] = file.size;
+            jObj["lastModifiedTime"] = file.lastModifiedTime;
+            jObj["hash"] = file.hash;
+
+            std::cout << jObj.dump(4) << std::endl; 
+        }
 
         std::vector<FileRecord> loadedFile2 = load_baseline(baselinePath2);
-        std::cout << "Loaded " << loadedFile2.size() << " records from baseline 2.\n";
+        std::cout << "Loaded " << loadedFile2.size() << " records from baseline 2.contents:\n";
+
+        for (const auto& file : loadedFile2) {
+            json jObj;
+            jObj["name"] = file.relativePath.string();
+            jObj["size"] = file.size;
+            jObj["lastModifiedTime"] = file.lastModifiedTime;
+            jObj["hash"] = file.hash;
+
+            std::cout << jObj.dump(4) << std::endl; 
+        }
 
         std::cout << "\nCompare results:\n";
         results = compare_scans(loadedFile1, loadedFile2);
 
         for (const auto& result : results) {
-            std::cout << result.path << " -> " << result.status << "\n";
+            std::cout << result.path << " -> " << change_type_to_string(result.status) << "\n";
         }
 
     } catch (const std::exception& ex) {

@@ -8,3 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(FileIntegrityMonitor
     main.cpp
 )
+
+target_include_directories(FileIntegrityMonitor PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)

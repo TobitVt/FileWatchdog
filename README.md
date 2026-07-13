@@ -19,19 +19,25 @@ The goal of this project is to simulate the core idea behind file integrity moni
 
 ---
 
-## Current Features (Prototype Stage)
+## Current Features
 
-This version implements the first core building blocks:
+This version implements the core file integrity monitoring workflow:
 
 - Recursive directory scanning using `std::filesystem`
 - Extraction of file metadata:
-  - Absolute path
-  - Relative path
+  - Absolute and relative paths
   - File size
   - Last modified timestamp
-- Storage of file data in structured `FileRecord` objects
-- Collection of file records using `std::vector`
-- SHA-256 hashing for file integrity verification
+- SHA-256 hashing for cryptographic file verification
+- Baseline persistence:
+  - Save scan results to JSON format
+  - Load previously saved baselines
+  - Structured, human-readable JSON output
+- File comparison engine:
+  - Compare current scan against baseline
+  - Classify files as unchanged, modified, new, or deleted
+  - Type-safe status using `ChangeType` enum
+- Modular function design for future extensibility
 
 ---
 
@@ -39,30 +45,48 @@ This version implements the first core building blocks:
 
 Future development will include:
 
-- Baseline storage system (JSON / SQLite)
-- Change detection (new / modified / deleted files)
-- Qt GUI dashboard
-- File comparison engine
-- Export scan reports (CSV / JSON)
+- SQLite database storage for baselines (replacing JSON)
+- Support for multiple independent baselines
+- Qt6 GUI dashboard with:
+  - Folder selection
+  - Scan and baseline creation buttons
+  - Results displayed in a table with color-coding
+  - Summary statistics and progress bar
+- Export capabilities:
+  - CSV export for scan results
+  - JSON export for reports
+- Advanced features:
+  - Ignore rules for file types and folders
+  - Error handling for locked/unreadable files
+  - Performance optimizations for large folder hierarchies
+- Automated testing suite
 
 ---
 
 ## Technologies Used
 
-- C++
-- C++ Standard Library (`filesystem`, `chrono`, `vector`)
-- STL data structures
-- Console-based output (current version)
+- **Language**: C++17
+- **Build System**: CMake 3.16+
+- **Standard Library**: `filesystem`, `chrono`, `vector`, `iostream`, `fstream`
+- **Cryptography**: picosha2 (SHA-256 hashing)
+- **Data Serialization**: nlohmann/json (single-header JSON library)
+- **Compiler**: MSVC, MinGW, or GCC with C++17 support
+- **Console-based output** (current version; Qt6 GUI planned)
 
 ---
 
 ## Key Concepts Practiced
 
-- File system traversal
-- Data modeling using structs
-- Vector-based data storage
-- Path manipulation (absolute vs relative paths)
-- Basic system design for security tools
+- File system traversal with recursive directory iteration
+- Data modeling using structs and enums
+- Cryptographic hashing for integrity verification
+- JSON serialization and deserialization
+- Comparison algorithms and change detection logic
+- Type-safe status representation using `enum class`
+- Modular function design and separation of concerns
+- File I/O operations (text and structured formats)
+- CMake-based project configuration
+- Error handling and resource management
 
 ---
 
@@ -70,33 +94,53 @@ Future development will include:
 
 ### Requirements
 - C++17 or later
+- CMake 3.16 or later
 - A compiler supporting `std::filesystem` (MSVC / MinGW / GCC)
 
-### Build (example using g++)
-- g++ main.cpp -o FileWatchdog
+### Build using CMake
+```bash
+cmake -S . -B build
+cmake --build build
+```
 
-### Run:
-- ./FileWatchdog
+### Run
+```bash
+./build/FileIntegrityMonitor.exe
+```
 
-### example output
-Path: C:/TestFolder/sub/a.txt
-File size: 1200 bytes
-Last modified time: 2026-06-25 14:32
+### Example Output
+```
+Scanned files:
+docs/readme.txt | 1200 bytes
+docs/guide.txt | 850 bytes
+Total files scanned: 2
 
-Path: C:/TestFolder/sub/b.txt
-File size: 850 bytes
-Last modified time: 2026-06-25 14:33
+Compare results:
+docs/readme.txt -> unchanged
+docs/guide.txt -> modified
+docs/newfile.txt -> new
+docs/oldfile.txt -> deleted
+```
 
-Total files scanned: 12
+The baseline is automatically saved as JSON for easy inspection and version control.
 
 ---
 
-### Notes
+## Project Status
 
-This project is an early-stage prototype. The focus is currently on building the scanning engine and data model before introducing GUI and persistence layers.
+This project has completed the core logic layer:
+- File scanning and hashing
+- JSON-based baseline persistence
+- Change detection and classification
+- Modular function architecture
 
-Core principle:
-Core logic must remain independent of the UI layer.
+Next phases will focus on:
+- Refactoring into separate header/implementation files
+- SQLite integration for database-backed storage
+- Qt6 GUI for desktop application interface
+- Additional robustness and performance features
+
+**Core principle**: The scanning and comparison logic remains independent of persistence and UI layers, ensuring clean architecture for future extensions.
 
 ---
 
