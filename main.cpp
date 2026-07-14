@@ -6,6 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+#include <limits>
 
 #include "json.hpp"
 
@@ -32,10 +33,11 @@ enum class ChangeType {
 };
 
 struct ChangeResult{
-    std::string path;
-    ChangeType status;
+    std::string path;      // File path that changed.
+    ChangeType status;     // What happened to that file.
 };
 
+// Turns a change enum into a readable label for the console.
 std::string change_type_to_string(ChangeType type) {
     switch (type) {
         case ChangeType::Unchanged: return "unchanged";
@@ -105,29 +107,53 @@ std::vector<FileRecord> scan_directory(const fs::path& root) {
     return files;
 }
 
-// Saves the current scan results to a simple text baseline file.
-bool save_baseline(const fs::path& baselinePath, const std::vector<FileRecord>& files) 
-{
+// Converts a FileRecord into a JSON object so it can be saved to disk.
+json file_to_json(const FileRecord& file) {
+    json jObj;
+    jObj["relativePath"] = file.relativePath.string();
+    jObj["size"] = file.size;
+    jObj["lastModifiedTime"] = file.lastModifiedTime;
+    jObj["hash"] = file.hash;
+    return jObj;
+}
+
+// Rebuilds a FileRecord from JSON when a baseline is loaded.
+FileRecord json_to_file_record(const json& obj) {
+    FileRecord file;
+    file.relativePath = fs::path(obj["relativePath"].get<std::string>());
+    file.size = obj["size"].get<std::uintmax_t>();
+    file.hash = obj["hash"].get<std::string>();
+    file.lastModifiedTime = obj["lastModifiedTime"].get<std::string>();
+    return file;
+}
+
+// Saves the current scan results to a JSON baseline file.
+bool save_baseline(const fs::path& baselinePath, const std::vector<FileRecord>& files) {
+    // Create the parent folder if it does not exist yet.
+    if (!baselinePath.parent_path().empty()) {
+        std::error_code ec;
+        fs::create_directories(baselinePath.parent_path(), ec);
+        if (ec) {
+            std::cerr << "Unable to create baseline folder: " << baselinePath.parent_path() << "\n";
+            return false;
+        }
+    }
+
     std::ofstream out(baselinePath, std::ios::trunc);
     if (!out) {
         return false;
     }
+
     json j = json::array();
     for (const auto& file : files) {
-        json jObj;
-        jObj["name"] = file.relativePath.string();
-        jObj["size"] = file.size;
-        jObj["lastModifiedTime"] = file.lastModifiedTime;
-        jObj["hash"] = file.hash;
-
-        j.push_back(jObj);
+        j.push_back(file_to_json(file));
     }
-    out << j.dump(4);
 
+    out << j.dump(4);
     return true;
 }
 
-// Compares two scans and stores one result per file.
+// Compares the old snapshot and the new snapshot to find files that changed.
 std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline, const std::vector<FileRecord>& current) {
     std::vector<ChangeResult> results;
 
@@ -178,7 +204,6 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
 // Loads a previously saved baseline from disk.
 std::vector<FileRecord> load_baseline(const fs::path& baselinePath) {
     std::ifstream in(baselinePath);
-
     if (!in) {
         throw std::runtime_error("Cannot open file: " + baselinePath.string());
     }
@@ -187,22 +212,15 @@ std::vector<FileRecord> load_baseline(const fs::path& baselinePath) {
     in >> j;
 
     std::vector<FileRecord> files;
-
     for (const auto& obj : j) {
-        FileRecord file;
-        file.relativePath = fs::path(obj["name"].get<std::string>());
-        file.size = obj["size"].get<std::uintmax_t>();
-        file.hash = obj["hash"].get<std::string>();
-        file.lastModifiedTime = obj["lastModifiedTime"].get<std::string>();
-        files.push_back(file);
+        files.push_back(json_to_file_record(obj));
     }
 
     return files;
 }
 
 // Prints the scan results to the console for easy inspection.
-void print_files(const std::vector<FileRecord>& files) 
-{
+void print_files(const std::vector<FileRecord>& files) {
     std::cout << "Scanned files:\n";
     for (const auto& file : files) {
         std::cout << file.relativePath << " | " << file.size << " bytes\n";
@@ -210,64 +228,175 @@ void print_files(const std::vector<FileRecord>& files)
     std::cout << "Total files scanned: " << files.size() << "\n";
 }
 
-int main() 
-{
+// Prints the contents of a loaded baseline for inspection.
+// Prints the contents of a loaded baseline for inspection.
+void print_loaded_baseline(const std::vector<FileRecord>& files, const std::string& label) {
+    std::cout << "Loaded " << files.size() << " records from " << label << ":\n";
+    for (const auto& file : files) {
+        std::cout << file_to_json(file).dump(4) << std::endl;
+    }
+}
+
+// Prints a quick summary of how many files were unchanged, modified, new, or deleted.
+void print_change_summary(const std::vector<ChangeResult>& results) {
+    std::size_t unchanged = 0;
+    std::size_t modified = 0;
+    std::size_t newFiles = 0;
+    std::size_t deleted = 0;
+
+    for (const auto& result : results) {
+        switch (result.status) {
+            case ChangeType::Unchanged: ++unchanged; break;
+            case ChangeType::Modified: ++modified; break;
+            case ChangeType::New: ++newFiles; break;
+            case ChangeType::Deleted: ++deleted; break;
+        }
+    }
+
+    std::cout << "Summary: unchanged=" << unchanged
+              << ", modified=" << modified
+              << ", new=" << newFiles
+              << ", deleted=" << deleted << "\n";
+}
+
+// Shows how to use the command-line interface.
+void print_usage(const char* programName) {
+    std::cout << "Usage:\n";
+    std::cout << "  " << programName << " create <root-folder> [baseline-file]\n";
+    std::cout << "  " << programName << " compare <root-folder> <baseline-file>\n";
+    std::cout << "  " << programName << " help\n";
+}
+
+// Creates a new baseline from the current contents of a folder.
+int run_create_mode(const fs::path& root, const fs::path& baselinePath) {
+    try {
+        std::vector<FileRecord> files = scan_directory(root);
+        print_files(files);
+
+        if (!save_baseline(baselinePath, files)) {
+            std::cerr << "Failed to save baseline.\n";
+            return 1;
+        }
+
+        std::cout << "Baseline saved to " << baselinePath << "\n";
+        return 0;
+    } catch (const std::exception& ex) {
+        std::cerr << "Error: " << ex.what() << "\n";
+        return 1;
+    }
+}
+
+// Compares the current folder contents against a saved baseline.
+int run_compare_mode(const fs::path& root, const fs::path& baselinePath) {
+    try {
+        std::vector<FileRecord> baselineRecords = load_baseline(baselinePath);
+        std::vector<FileRecord> currentRecords = scan_directory(root);
+
+        print_files(currentRecords);
+        std::cout << "Compared against baseline: " << baselinePath << "\n";
+
+        std::vector<ChangeResult> results = compare_scans(baselineRecords, currentRecords);
+        for (const auto& result : results) {
+            std::cout << result.path << " -> " << change_type_to_string(result.status) << "\n";
+        }
+
+        print_change_summary(results);
+        return 0;
+    } catch (const std::exception& ex) {
+        std::cerr << "Error: " << ex.what() << "\n";
+        return 1;
+    }
+}
+
+// Entry point for the program. Supports CLI usage or the older interactive prompt.
+int main(int argc, char* argv[]) {
+    if (argc > 1) {
+        std::string mode = argv[1];
+        if (mode == "help" || mode == "--help" || mode == "-h") {
+            print_usage(argv[0]);
+            return 0;
+        }
+
+        if (mode == "create") {
+            if (argc < 3) {
+                print_usage(argv[0]);
+                return 1;
+            }
+
+            fs::path root = argv[2];
+            fs::path baselinePath = (argc >= 4) ? argv[3] : "baseline.json";
+            return run_create_mode(root, baselinePath);
+        }
+
+        if (mode == "compare") {
+            if (argc < 3) {
+                print_usage(argv[0]);
+                return 1;
+            }
+
+            fs::path root = argv[2];
+            fs::path baselinePath = (argc >= 4) ? argv[3] : "baseline.json";
+            return run_compare_mode(root, baselinePath);
+        }
+
+        print_usage(argv[0]);
+        return 1;
+    }
+
     std::vector<ChangeResult> results;
-    // The folder we want to monitor.
-    const fs::path root = "C:/Users/tobit/TestFolder/sub";
-    // Where the baseline will be stored.
-    const fs::path baselinePath1 = "baseline1.txt";
-    const fs::path baselinePath2 = "baseline2.txt";
+    fs::path root = fs::current_path();
+    fs::path baselinePath1 = "baseline1.json";
+    fs::path baselinePath2 = "baseline2.json";
+
+    std::cout << "Please provide the root folder to scan (press Enter for current directory): ";
+    std::string rootInput;
+    std::getline(std::cin, rootInput);
+    if (!rootInput.empty()) {
+        root = fs::path(rootInput);
+    }
+
+    std::cout << "Where should the first baseline be saved? (press Enter for baseline1.json): ";
+    std::string baseline1Input;
+    std::getline(std::cin, baseline1Input);
+    if (!baseline1Input.empty()) {
+        baselinePath1 = fs::path(baseline1Input);
+    }
 
     try {
-        // Step 1: Scan the folder and collect file information.
         std::vector<FileRecord> files1 = scan_directory(root);
         print_files(files1);
+
+        if (!save_baseline(baselinePath1, files1)) {
+            std::cerr << "Failed to save the first baseline.\n";
+            return 1;
+        }
+        std::cout << "Baseline 1 saved to " << baselinePath1 << "\n";
+
+        std::cout << "Please alter files in " << root << " now, then press Enter when done.\n";
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::cin.get();
+
+        std::cout << "Where should the second baseline be saved? (press Enter for baseline2.json): ";
+        std::string baseline2Input;
+        std::getline(std::cin, baseline2Input);
+        if (!baseline2Input.empty()) {
+            baselinePath2 = fs::path(baseline2Input);
+        }
 
         std::vector<FileRecord> files2 = scan_directory(root);
         print_files(files2);
 
-        // Step 2: Save the current scan as a baseline.
-
-        if (!save_baseline(baselinePath1, files1)) {
-            std::cerr << "Failed to save 1 to baseline.\n";
-            return 1;
-        }
-
-        std::cout << "Baseline 1 saved to " << baselinePath1 << "\n";
-
         if (!save_baseline(baselinePath2, files2)) {
-            std::cerr << "Failed to save 2 to baseline.\n";
+            std::cerr << "Failed to save the second baseline.\n";
             return 1;
         }
         std::cout << "Baseline 2 saved to " << baselinePath2 << "\n";
 
-        // Step 3: Load the baseline back to prove the data was stored correctly.
         std::vector<FileRecord> loadedFile1 = load_baseline(baselinePath1);
-        std::cout << "Loaded " << loadedFile1.size() << " records from baseline 1. contents:\n";
-
-        for (const auto& file : loadedFile1) {
-            json jObj;
-            jObj["name"] = file.relativePath.string();
-            jObj["size"] = file.size;
-            jObj["lastModifiedTime"] = file.lastModifiedTime;
-            jObj["hash"] = file.hash;
-
-            std::cout << jObj.dump(4) << std::endl; 
-        }
+        print_loaded_baseline(loadedFile1, "baseline 1");
 
         std::vector<FileRecord> loadedFile2 = load_baseline(baselinePath2);
-        std::cout << "Loaded " << loadedFile2.size() << " records from baseline 2.contents:\n";
-
-        for (const auto& file : loadedFile2) {
-            json jObj;
-            jObj["name"] = file.relativePath.string();
-            jObj["size"] = file.size;
-            jObj["lastModifiedTime"] = file.lastModifiedTime;
-            jObj["hash"] = file.hash;
-
-            std::cout << jObj.dump(4) << std::endl; 
-        }
+        print_loaded_baseline(loadedFile2, "baseline 2");
 
         std::cout << "\nCompare results:\n";
         results = compare_scans(loadedFile1, loadedFile2);
@@ -276,6 +405,7 @@ int main()
             std::cout << result.path << " -> " << change_type_to_string(result.status) << "\n";
         }
 
+        print_change_summary(results);
     } catch (const std::exception& ex) {
         std::cerr << "Error: " << ex.what() << "\n";
         return 1;
