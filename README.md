@@ -33,10 +33,16 @@ This version implements the core file integrity monitoring workflow:
   - Save scan results to JSON format
   - Load previously saved baselines
   - Structured, human-readable JSON output
+  - Automatically create parent folders for baseline files
 - File comparison engine:
   - Compare current scan against baseline
   - Classify files as unchanged, modified, new, or deleted
   - Type-safe status using `ChangeType` enum
+  - Print a simple summary of counts for each change category
+- Command-line interface:
+  - `create` mode to generate a baseline
+  - `compare` mode to compare a folder against an existing baseline
+  - `help` for usage information
 - Modular function design for future extensibility
 
 ---
@@ -105,7 +111,9 @@ cmake --build build
 
 ### Run
 ```bash
-./build/FileIntegrityMonitor.exe
+./build/FileIntegrityMonitor.exe help
+./build/FileIntegrityMonitor.exe create "C:/path/to/folder" baseline.json
+./build/FileIntegrityMonitor.exe compare "C:/path/to/folder" baseline.json
 ```
 
 ### Example Output
@@ -120,6 +128,7 @@ docs/readme.txt -> unchanged
 docs/guide.txt -> modified
 docs/newfile.txt -> new
 docs/oldfile.txt -> deleted
+Summary: unchanged=1, modified=1, new=1, deleted=1
 ```
 
 The baseline is automatically saved as JSON for easy inspection and version control.
@@ -139,6 +148,8 @@ Next phases will focus on:
 - SQLite integration for database-backed storage
 - Qt6 GUI for desktop application interface
 - Additional robustness and performance features
+
+The current CLI layer is a stepping stone for the future GUI and will later be mirrored by buttons, dialogs, and a results table in the desktop app.
 
 **Core principle**: The scanning and comparison logic remains independent of persistence and UI layers, ensuring clean architecture for future extensions.
 
