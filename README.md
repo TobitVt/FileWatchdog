@@ -44,6 +44,7 @@ This version implements the core file integrity monitoring workflow:
   - `compare` mode to compare a folder against an existing baseline
   - `help` for usage information
 - Modular function design for future extensibility
+- SQLite database storage for baselines (replacing JSON)
 
 ---
 
@@ -51,7 +52,6 @@ This version implements the core file integrity monitoring workflow:
 
 Future development will include:
 
-- SQLite database storage for baselines (replacing JSON)
 - Support for multiple independent baselines
 - Qt6 GUI dashboard with:
   - Folder selection
@@ -86,7 +86,6 @@ Future development will include:
 - File system traversal with recursive directory iteration
 - Data modeling using structs and enums
 - Cryptographic hashing for integrity verification
-- JSON serialization and deserialization
 - Comparison algorithms and change detection logic
 - Type-safe status representation using `enum class`
 - Modular function design and separation of concerns
@@ -139,13 +138,11 @@ The baseline is automatically saved as JSON for easy inspection and version cont
 
 This project has completed the core logic layer:
 - File scanning and hashing
-- JSON-based baseline persistence
 - Change detection and classification
 - Modular function architecture
 
 Next phases will focus on:
 - Refactoring into separate header/implementation files
-- SQLite integration for database-backed storage
 - Qt6 GUI for desktop application interface
 - Additional robustness and performance features
 
