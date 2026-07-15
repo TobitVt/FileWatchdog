@@ -8,22 +8,13 @@
 #include <vector>
 #include <limits>
 
-#include "json.hpp"
-
 #include "picosha2.h"
 
+#include "database.h"
+#include "file_record.h"
+#include "sqlite3.h"
 
 namespace fs = std::filesystem;
-using json = nlohmann::json;
-
-// Represents one file discovered during a scan.
-struct FileRecord {
-    fs::path absolutePath;      // Full path to the file on disk.
-    fs::path relativePath;      // Path relative to the scanned root folder.
-    std::uintmax_t size;        // File size in bytes.
-    std::string lastModifiedTime; // Human-readable last modified timestamp.
-    std::string hash;           // SHA-256 hash of the file contents.
-};
 
 enum class ChangeType {
     Unchanged,
@@ -107,50 +98,13 @@ std::vector<FileRecord> scan_directory(const fs::path& root) {
     return files;
 }
 
-// Converts a FileRecord into a JSON object so it can be saved to disk.
-json file_to_json(const FileRecord& file) {
-    json jObj;
-    jObj["relativePath"] = file.relativePath.string();
-    jObj["size"] = file.size;
-    jObj["lastModifiedTime"] = file.lastModifiedTime;
-    jObj["hash"] = file.hash;
-    return jObj;
-}
-
-// Rebuilds a FileRecord from JSON when a baseline is loaded.
-FileRecord json_to_file_record(const json& obj) {
-    FileRecord file;
-    file.relativePath = fs::path(obj["relativePath"].get<std::string>());
-    file.size = obj["size"].get<std::uintmax_t>();
-    file.hash = obj["hash"].get<std::string>();
-    file.lastModifiedTime = obj["lastModifiedTime"].get<std::string>();
-    return file;
-}
-
-// Saves the current scan results to a JSON baseline file.
-bool save_baseline(const fs::path& baselinePath, const std::vector<FileRecord>& files) {
-    // Create the parent folder if it does not exist yet.
-    if (!baselinePath.parent_path().empty()) {
-        std::error_code ec;
-        fs::create_directories(baselinePath.parent_path(), ec);
-        if (ec) {
-            std::cerr << "Unable to create baseline folder: " << baselinePath.parent_path() << "\n";
-            return false;
-        }
-    }
-
-    std::ofstream out(baselinePath, std::ios::trunc);
-    if (!out) {
+// Saves the current scan results to the SQLite database.
+bool save_baseline(Database& db, const std::string& baselineName, const std::vector<FileRecord>& files) {
+    if (!db.create_baseline(baselineName, "")) {
         return false;
     }
 
-    json j = json::array();
-    for (const auto& file : files) {
-        j.push_back(file_to_json(file));
-    }
-
-    out << j.dump(4);
-    return true;
+    return db.save_files_to_baseline(baselineName, files);
 }
 
 // Compares the old snapshot and the new snapshot to find files that changed.
@@ -201,22 +155,9 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
     return results;
 }
 
-// Loads a previously saved baseline from disk.
-std::vector<FileRecord> load_baseline(const fs::path& baselinePath) {
-    std::ifstream in(baselinePath);
-    if (!in) {
-        throw std::runtime_error("Cannot open file: " + baselinePath.string());
-    }
-
-    json j;
-    in >> j;
-
-    std::vector<FileRecord> files;
-    for (const auto& obj : j) {
-        files.push_back(json_to_file_record(obj));
-    }
-
-    return files;
+// Loads a previously saved baseline from the SQLite database.
+std::vector<FileRecord> load_baseline(Database& db, const std::string& baselineName) {
+    return db.load_baseline(baselineName);
 }
 
 // Prints the scan results to the console for easy inspection.
@@ -229,11 +170,11 @@ void print_files(const std::vector<FileRecord>& files) {
 }
 
 // Prints the contents of a loaded baseline for inspection.
-// Prints the contents of a loaded baseline for inspection.
 void print_loaded_baseline(const std::vector<FileRecord>& files, const std::string& label) {
     std::cout << "Loaded " << files.size() << " records from " << label << ":\n";
     for (const auto& file : files) {
-        std::cout << file_to_json(file).dump(4) << std::endl;
+        std::cout << file.relativePath.string() << " | " << file.size << " bytes | "
+                  << file.hash << "\n";
     }
 }
 
@@ -268,17 +209,18 @@ void print_usage(const char* programName) {
 }
 
 // Creates a new baseline from the current contents of a folder.
-int run_create_mode(const fs::path& root, const fs::path& baselinePath) {
+int run_create_mode(const fs::path& root, const std::string& baselineName) {
     try {
+        Database db("file_integrity.db");
         std::vector<FileRecord> files = scan_directory(root);
         print_files(files);
 
-        if (!save_baseline(baselinePath, files)) {
+        if (!save_baseline(db, baselineName, files)) {
             std::cerr << "Failed to save baseline.\n";
             return 1;
         }
 
-        std::cout << "Baseline saved to " << baselinePath << "\n";
+        std::cout << "Baseline saved to database as '" << baselineName << "'.\n";
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "Error: " << ex.what() << "\n";
@@ -287,13 +229,14 @@ int run_create_mode(const fs::path& root, const fs::path& baselinePath) {
 }
 
 // Compares the current folder contents against a saved baseline.
-int run_compare_mode(const fs::path& root, const fs::path& baselinePath) {
+int run_compare_mode(const fs::path& root, const std::string& baselineName) {
     try {
-        std::vector<FileRecord> baselineRecords = load_baseline(baselinePath);
+        Database db("file_integrity.db");
+        std::vector<FileRecord> baselineRecords = load_baseline(db, baselineName);
         std::vector<FileRecord> currentRecords = scan_directory(root);
 
         print_files(currentRecords);
-        std::cout << "Compared against baseline: " << baselinePath << "\n";
+        std::cout << "Compared against baseline: " << baselineName << "\n";
 
         std::vector<ChangeResult> results = compare_scans(baselineRecords, currentRecords);
         for (const auto& result : results) {
@@ -324,8 +267,8 @@ int main(int argc, char* argv[]) {
             }
 
             fs::path root = argv[2];
-            fs::path baselinePath = (argc >= 4) ? argv[3] : "baseline.json";
-            return run_create_mode(root, baselinePath);
+            std::string baselineName = (argc >= 4) ? argv[3] : "default_baseline";
+            return run_create_mode(root, baselineName);
         }
 
         if (mode == "compare") {
@@ -335,8 +278,8 @@ int main(int argc, char* argv[]) {
             }
 
             fs::path root = argv[2];
-            fs::path baselinePath = (argc >= 4) ? argv[3] : "baseline.json";
-            return run_compare_mode(root, baselinePath);
+            std::string baselineName = (argc >= 4) ? argv[3] : "default_baseline";
+            return run_compare_mode(root, baselineName);
         }
 
         print_usage(argv[0]);
@@ -345,8 +288,8 @@ int main(int argc, char* argv[]) {
 
     std::vector<ChangeResult> results;
     fs::path root = fs::current_path();
-    fs::path baselinePath1 = "baseline1.json";
-    fs::path baselinePath2 = "baseline2.json";
+    std::string baselineName1 = "baseline1";
+    std::string baselineName2 = "baseline2";
 
     std::cout << "Please provide the root folder to scan (press Enter for current directory): ";
     std::string rootInput;
@@ -355,47 +298,48 @@ int main(int argc, char* argv[]) {
         root = fs::path(rootInput);
     }
 
-    std::cout << "Where should the first baseline be saved? (press Enter for baseline1.json): ";
+    std::cout << "What should the first baseline be called? (press Enter for baseline1): ";
     std::string baseline1Input;
     std::getline(std::cin, baseline1Input);
     if (!baseline1Input.empty()) {
-        baselinePath1 = fs::path(baseline1Input);
+        baselineName1 = baseline1Input;
     }
 
     try {
+        Database db("file_integrity.db");
         std::vector<FileRecord> files1 = scan_directory(root);
         print_files(files1);
 
-        if (!save_baseline(baselinePath1, files1)) {
+        if (!save_baseline(db, baselineName1, files1)) {
             std::cerr << "Failed to save the first baseline.\n";
             return 1;
         }
-        std::cout << "Baseline 1 saved to " << baselinePath1 << "\n";
+        std::cout << "Baseline 1 saved to database as '" << baselineName1 << "'.\n";
 
         std::cout << "Please alter files in " << root << " now, then press Enter when done.\n";
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         std::cin.get();
 
-        std::cout << "Where should the second baseline be saved? (press Enter for baseline2.json): ";
+        std::cout << "What should the second baseline be called? (press Enter for baseline2): ";
         std::string baseline2Input;
         std::getline(std::cin, baseline2Input);
         if (!baseline2Input.empty()) {
-            baselinePath2 = fs::path(baseline2Input);
+            baselineName2 = baseline2Input;
         }
 
         std::vector<FileRecord> files2 = scan_directory(root);
         print_files(files2);
 
-        if (!save_baseline(baselinePath2, files2)) {
+        if (!save_baseline(db, baselineName2, files2)) {
             std::cerr << "Failed to save the second baseline.\n";
             return 1;
         }
-        std::cout << "Baseline 2 saved to " << baselinePath2 << "\n";
+        std::cout << "Baseline 2 saved to database as '" << baselineName2 << "'.\n";
 
-        std::vector<FileRecord> loadedFile1 = load_baseline(baselinePath1);
+        std::vector<FileRecord> loadedFile1 = load_baseline(db, baselineName1);
         print_loaded_baseline(loadedFile1, "baseline 1");
 
-        std::vector<FileRecord> loadedFile2 = load_baseline(baselinePath2);
+        std::vector<FileRecord> loadedFile2 = load_baseline(db, baselineName2);
         print_loaded_baseline(loadedFile2, "baseline 2");
 
         std::cout << "\nCompare results:\n";

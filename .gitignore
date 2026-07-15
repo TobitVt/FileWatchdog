@@ -20,3 +20,9 @@ Desktop.ini
 *.log
 *.tmp
 *.dat
+
+# Runtime database
+file_integrity.db
+
+*.user
+*.autosave
