@@ -6,7 +6,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
-#include <limits>
+#include <functional>
+#include <unordered_map>
 
 #include "picosha2.h"
 
@@ -80,23 +81,52 @@ std::vector<FileRecord> scan_directory(const fs::path& root) {
 
     std::vector<FileRecord> files;
 
-    for (const auto& entry : fs::recursive_directory_iterator(root)) {
-        if (!entry.is_regular_file()) {
+    fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied);
+    fs::recursive_directory_iterator end;
+
+    for (; it != end; ++it) {
+        const auto& entry = *it;
+
+        // Skip symlinks explicitly — is_regular_file() follows them, which
+        // can throw on broken links or silently hash link targets.
+        if (entry.is_symlink()) {
             continue;
         }
 
-        FileRecord record;
-        record.absolutePath = entry.path();
-        record.relativePath = fs::relative(entry.path(), root);
-        record.size = entry.file_size();
-        record.lastModifiedTime = format_last_modified(entry.last_write_time());
-        record.hash = calculate_sha256(entry.path());
+        std::error_code ec;
+        if (!entry.is_regular_file(ec) || ec) {
+            continue;
+        }
 
-        files.push_back(record);
+        try {
+            FileRecord record;
+            record.absolutePath = entry.path();
+            record.relativePath = fs::relative(entry.path(), root);
+            record.size = entry.file_size();
+            record.lastModifiedTime = format_last_modified(entry.last_write_time());
+            record.hash = calculate_sha256(entry.path());
+
+            files.push_back(record);
+        } catch (const std::exception& ex) {
+            // Don't let one unreadable file abort the whole scan.
+            std::cerr << "Skipping " << entry.path() << ": " << ex.what() << "\n";
+            continue;
+        }
     }
 
     return files;
 }
+
+// Plain-data outcome of a create/compare run — no I/O, safe for Qt to consume.
+struct ScanOutcome {
+    std::vector<FileRecord> files;
+};
+
+struct CompareOutcome {
+    std::vector<FileRecord> baselineRecords;
+    std::vector<FileRecord> currentRecords;
+    std::vector<ChangeResult> changes;
+};
 
 // Saves the current scan results to the SQLite database.
 bool save_baseline(Database& db, const std::string& baselineName, const std::vector<FileRecord>& files) {
@@ -111,42 +141,37 @@ bool save_baseline(Database& db, const std::string& baselineName, const std::vec
 std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline, const std::vector<FileRecord>& current) {
     std::vector<ChangeResult> results;
 
-    for (const auto& oldFile : baseline) {
-        bool found = false;
-
-        for (const auto& newFile : current) {
-            if (oldFile.relativePath == newFile.relativePath) {
-                found = true;
-
-                ChangeResult result;
-                result.path = oldFile.relativePath.string();
-                result.status = (oldFile.hash == newFile.hash) ? ChangeType::Unchanged : ChangeType::Modified;
-                results.push_back(result);
-                break;
-            }
-        }
-
-        if (!found) {
-            ChangeResult result;
-            result.path = oldFile.relativePath.string();
-            result.status = ChangeType::Deleted;
-            results.push_back(result);
-        }
+    // Index the current scan by relative path for O(1) lookups.
+    std::unordered_map<std::string, const FileRecord*> currentByPath;
+    currentByPath.reserve(current.size());
+    for (const auto& file : current) {
+        currentByPath[file.relativePath.string()] = &file;
     }
 
-    for (const auto& newFile : current) {
-        bool found = false;
+    // Walk the baseline, checking each entry against the index.
+    std::unordered_map<std::string, bool> seenInCurrent; // tracks which current entries got matched
+    for (const auto& oldFile : baseline) {
+        const std::string key = oldFile.relativePath.string();
+        auto it = currentByPath.find(key);
 
-        for (const auto& oldFile : baseline) {
-            if (newFile.relativePath == oldFile.relativePath) {
-                found = true;
-                break;
-            }
+        ChangeResult result;
+        result.path = key;
+
+        if (it == currentByPath.end()) {
+            result.status = ChangeType::Deleted;
+        } else {
+            result.status = (oldFile.hash == it->second->hash) ? ChangeType::Unchanged : ChangeType::Modified;
+            seenInCurrent[key] = true;
         }
+        results.push_back(result);
+    }
 
-        if (!found) {
+    // Anything in current that wasn't matched against baseline is new.
+    for (const auto& newFile : current) {
+        const std::string key = newFile.relativePath.string();
+        if (seenInCurrent.find(key) == seenInCurrent.end()) {
             ChangeResult result;
-            result.path = newFile.relativePath.string();
+            result.path = key;
             result.status = ChangeType::New;
             results.push_back(result);
         }
@@ -158,6 +183,25 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
 // Loads a previously saved baseline from the SQLite database.
 std::vector<FileRecord> load_baseline(Database& db, const std::string& baselineName) {
     return db.load_baseline(baselineName);
+}
+
+// Pure logic: scan + save, no printing, no exit codes. Throws on failure.
+ScanOutcome run_create(Database& db, const fs::path& root, const std::string& baselineName) {
+    ScanOutcome outcome;
+    outcome.files = scan_directory(root);
+    if (!save_baseline(db, baselineName, outcome.files)) {
+        throw std::runtime_error("Failed to save baseline '" + baselineName + "'.");
+    }
+    return outcome;
+}
+
+// Pure logic: load + scan + diff, no printing, no exit codes. Throws on failure.
+CompareOutcome run_compare(Database& db, const fs::path& root, const std::string& baselineName) {
+    CompareOutcome outcome;
+    outcome.baselineRecords = load_baseline(db, baselineName);
+    outcome.currentRecords = scan_directory(root);
+    outcome.changes = compare_scans(outcome.baselineRecords, outcome.currentRecords);
+    return outcome;
 }
 
 // Prints the scan results to the console for easy inspection.
@@ -212,14 +256,9 @@ void print_usage(const char* programName) {
 int run_create_mode(const fs::path& root, const std::string& baselineName) {
     try {
         Database db("file_integrity.db");
-        std::vector<FileRecord> files = scan_directory(root);
-        print_files(files);
+        ScanOutcome outcome = run_create(db, root, baselineName);
 
-        if (!save_baseline(db, baselineName, files)) {
-            std::cerr << "Failed to save baseline.\n";
-            return 1;
-        }
-
+        print_files(outcome.files);
         std::cout << "Baseline saved to database as '" << baselineName << "'.\n";
         return 0;
     } catch (const std::exception& ex) {
@@ -232,25 +271,22 @@ int run_create_mode(const fs::path& root, const std::string& baselineName) {
 int run_compare_mode(const fs::path& root, const std::string& baselineName) {
     try {
         Database db("file_integrity.db");
-        std::vector<FileRecord> baselineRecords = load_baseline(db, baselineName);
-        std::vector<FileRecord> currentRecords = scan_directory(root);
+        CompareOutcome outcome = run_compare(db, root, baselineName);
 
-        print_files(currentRecords);
+        print_files(outcome.currentRecords);
         std::cout << "Compared against baseline: " << baselineName << "\n";
 
-        std::vector<ChangeResult> results = compare_scans(baselineRecords, currentRecords);
-        for (const auto& result : results) {
+        for (const auto& result : outcome.changes) {
             std::cout << result.path << " -> " << change_type_to_string(result.status) << "\n";
         }
 
-        print_change_summary(results);
+        print_change_summary(outcome.changes);
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "Error: " << ex.what() << "\n";
         return 1;
     }
 }
-
 // Entry point for the program. Supports CLI usage or the older interactive prompt.
 int main(int argc, char* argv[]) {
     if (argc > 1) {
@@ -317,7 +353,6 @@ int main(int argc, char* argv[]) {
         std::cout << "Baseline 1 saved to database as '" << baselineName1 << "'.\n";
 
         std::cout << "Please alter files in " << root << " now, then press Enter when done.\n";
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         std::cin.get();
 
         std::cout << "What should the second baseline be called? (press Enter for baseline2): ";
