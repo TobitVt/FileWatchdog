@@ -36,6 +36,7 @@ struct CompareOutcome {
 std::string change_type_to_string(ChangeType type);
 std::string calculate_sha256(const fs::path& filepath);
 std::string format_last_modified(const fs::file_time_type& time);
+std::string default_database_path();
 
 std::vector<FileRecord> scan_directory(
     const fs::path& root,

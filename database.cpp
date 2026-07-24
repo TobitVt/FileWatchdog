@@ -3,6 +3,9 @@
 #include "sqlite3.h"
 #include <stdexcept>
 
+#include <filesystem>
+namespace fs = std::filesystem;
+
 Database::Database(const std::string& dbPath) {
     int rc = sqlite3_open(dbPath.c_str(), &db);
     if (rc) {
@@ -88,7 +91,7 @@ bool Database::save_files_to_baseline(const std::string& name, const std::vector
     for (const auto& file : files) {
         sqlite3_prepare_v2(db, insertSQL, -1, &stmt, nullptr);
         sqlite3_bind_int(stmt, 1, baseline_id);
-        sqlite3_bind_text(stmt, 2, file.relativePath.string().c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, reinterpret_cast<const char*>(file.relativePath.u8string().c_str()), -1, SQLITE_STATIC);
         sqlite3_bind_int64(stmt, 3, file.size);
         sqlite3_bind_text(stmt, 4, file.lastModifiedTime.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 5, file.hash.c_str(), -1, SQLITE_STATIC);
@@ -120,7 +123,8 @@ std::vector<FileRecord> Database::load_baseline(const std::string& name) {
     
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         FileRecord record;
-        record.relativePath = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const char* rawPath = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        record.relativePath = fs::u8path(rawPath);
         record.size = sqlite3_column_int64(stmt, 1);
         record.lastModifiedTime = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         record.hash = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));

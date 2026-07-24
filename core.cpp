@@ -9,6 +9,22 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+std::string default_database_path() {
+#ifdef _WIN32
+    char buffer[MAX_PATH];
+    GetModuleFileNameA(nullptr, buffer, MAX_PATH);
+    fs::path exePath(buffer);
+    return (exePath.parent_path() / "file_integrity.db").string();
+#else
+    // Fallback for non-Windows builds: use cwd-relative path.
+    return "file_integrity.db";
+#endif
+}
+
 // Turns a change enum into a readable label for the console.
 std::string change_type_to_string(ChangeType type) {
     switch (type) {
@@ -120,13 +136,13 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
     std::unordered_map<std::string, const FileRecord*> currentByPath;
     currentByPath.reserve(current.size());
     for (const auto& file : current) {
-        currentByPath[file.relativePath.string()] = &file;
+        currentByPath[file.relativePath.u8string()] = &file;
     }
 
     // Walk the baseline, checking each entry against the index.
     std::unordered_map<std::string, bool> seenInCurrent; // tracks which current entries got matched
     for (const auto& oldFile : baseline) {
-        const std::string key = oldFile.relativePath.string();
+        const std::string key = oldFile.relativePath.u8string();
         auto it = currentByPath.find(key);
 
         ChangeResult result;
@@ -143,7 +159,7 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
 
     // Anything in current that wasn't matched against baseline is new.
     for (const auto& newFile : current) {
-        const std::string key = newFile.relativePath.string();
+        const std::string key = newFile.relativePath.u8string();
         if (seenInCurrent.find(key) == seenInCurrent.end()) {
             ChangeResult result;
             result.path = key;

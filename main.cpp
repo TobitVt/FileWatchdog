@@ -56,7 +56,7 @@ void print_usage(const char* programName) {
 // Creates a new baseline from the current contents of a folder.
 int run_create_mode(const fs::path& root, const std::string& baselineName) {
     try {
-        Database db("file_integrity.db");
+        Database db(default_database_path());
         ScanOutcome outcome = run_create(db, root, baselineName);
 
         print_files(outcome.files);
@@ -71,7 +71,7 @@ int run_create_mode(const fs::path& root, const std::string& baselineName) {
 // Compares the current folder contents against a saved baseline.
 int run_compare_mode(const fs::path& root, const std::string& baselineName) {
     try {
-        Database db("file_integrity.db");
+        Database db(default_database_path());
         CompareOutcome outcome = run_compare(db, root, baselineName);
 
         print_files(outcome.currentRecords);
@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        Database db("file_integrity.db");
+        Database db(default_database_path());
         std::vector<FileRecord> files1 = scan_directory(root);
         print_files(files1);
 
