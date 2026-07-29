@@ -3,11 +3,16 @@
 #include "sqlite3.h"
 #include <stdexcept>
 
+#include <iostream>
+
 #include <filesystem>
 namespace fs = std::filesystem;
 
 Database::Database(const std::string& dbPath) {
     int rc = sqlite3_open(dbPath.c_str(), &db);
+
+    std::cout << "Opening database: " << dbPath << '\n';
+
     if (rc) {
         throw std::runtime_error("Cannot open database: " + std::string(sqlite3_errmsg(db)));
     }
@@ -46,6 +51,7 @@ Database::~Database() {
 }
 
 bool Database::create_baseline(const std::string& name, const std::string& folderPath) {
+
     const char* sql = R"(
         INSERT INTO baselines (name, folder_path)
         VALUES (?, ?)
@@ -108,6 +114,9 @@ bool Database::save_files_to_baseline(const std::string& name, const std::vector
 }
 
 std::vector<FileRecord> Database::load_baseline(const std::string& name) {
+
+    std::cout << "Loading baseline: '" << name << "'\n";
+    
     std::vector<FileRecord> files;
     sqlite3_stmt* stmt;
     
@@ -117,6 +126,8 @@ std::vector<FileRecord> Database::load_baseline(const std::string& name) {
         JOIN baselines b ON f.baseline_id = b.id
         WHERE b.name = ?;
     )";
+
+
     
     sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
     sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
@@ -132,6 +143,15 @@ std::vector<FileRecord> Database::load_baseline(const std::string& name) {
     }
     
     sqlite3_finalize(stmt);
+
+    std::cout << "Loaded " << files.size() << " files\n";
+
+    for (const auto& file : files)
+    {
+        std::cout << "Loaded: " << file.relativePath.string()
+                << " | Hash: " << file.hash << '\n';
+    }
+
     return files;
 }
 

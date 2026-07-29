@@ -35,7 +35,7 @@ void MainWindow::onCreateBaselineClicked() {
     }
 
     bool ok;
-    QString name = QInputDialog::getText(this, "Baseline name", "Name:", QLineEdit::Normal, "default_baseline", &ok);
+    QString name = QInputDialog::getText(this, "Baseline name", "Name:", QLineEdit::Normal, "defaultbaseline", &ok);
     if (!ok || name.isEmpty()) return;
 
     try {
@@ -54,7 +54,7 @@ void MainWindow::onCompareClicked() {
     }
 
     bool ok;
-    QString name = QInputDialog::getText(this, "Baseline name", "Name:", QLineEdit::Normal, "default_baseline", &ok);
+    QString name = QInputDialog::getText(this, "Baseline name", "Name:", QLineEdit::Normal, "defaultbaseline", &ok);
     if (!ok || name.isEmpty()) return;
 
     try {
@@ -72,10 +72,10 @@ void MainWindow::onCompareClicked() {
 
             QColor rowColor;
             switch (change.status) {
-                case ChangeType::New:       rowColor = QColor(200, 255, 200); break; // light green
-                case ChangeType::Modified:  rowColor = QColor(255, 240, 180); break; // light amber
-                case ChangeType::Deleted:   rowColor = QColor(255, 200, 200); break; // light red
-                case ChangeType::Unchanged: rowColor = QColor(240, 240, 240); break; // light gray
+                case ChangeType::New:       rowColor = QColor(Qt::green); break; 
+                case ChangeType::Modified:  rowColor = QColor(Qt::blue); break; 
+                case ChangeType::Deleted:   rowColor = QColor(Qt::red); break; 
+                case ChangeType::Unchanged: rowColor = QColor(Qt::gray); break; 
             }
             pathItem->setBackground(rowColor);
             statusItem->setBackground(rowColor);

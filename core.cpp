@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -18,7 +19,7 @@ std::string default_database_path() {
     char buffer[MAX_PATH];
     GetModuleFileNameA(nullptr, buffer, MAX_PATH);
     fs::path exePath(buffer);
-    return (exePath.parent_path() / "file_integrity.db").string();
+    return (exePath.parent_path().parent_path() / "file_integrity.db").string();
 #else
     // Fallback for non-Windows builds: use cwd-relative path.
     return "file_integrity.db";
@@ -106,7 +107,8 @@ std::vector<FileRecord> scan_directory(const fs::path& root, std::function<bool(
             files.push_back(record);
         } catch (const std::exception& ex) {
             // Don't let one unreadable file abort the whole scan.
-            std::cerr << "Skipping " << entry.path() << ": " << ex.what() << "\n";
+            std::cerr << "Skipping " << reinterpret_cast<const char*>(entry.path().u8string().c_str())
+                       << ": " << ex.what() << "\n";
             continue;
         }
 
@@ -138,7 +140,6 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
     for (const auto& file : current) {
         currentByPath[file.relativePath.u8string()] = &file;
     }
-
     // Walk the baseline, checking each entry against the index.
     std::unordered_map<std::string, bool> seenInCurrent; // tracks which current entries got matched
     for (const auto& oldFile : baseline) {
@@ -154,6 +155,7 @@ std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline,
             result.status = (oldFile.hash == it->second->hash) ? ChangeType::Unchanged : ChangeType::Modified;
             seenInCurrent[key] = true;
         }
+
         results.push_back(result);
     }
 
@@ -186,11 +188,54 @@ ScanOutcome run_create(Database& db, const fs::path& root, const std::string& ba
     return outcome;
 }
 
-// Pure logic: load + scan + diff, no printing, no exit codes. Throws on failure.
+void print_change_summary_temp(const std::vector<ChangeResult>& results)
+{
+    std::size_t unchanged = 0;
+    std::size_t modified = 0;
+    std::size_t newFiles = 0;
+    std::size_t deleted = 0;
+
+    for (const auto& result : results) {
+        switch (result.status) {
+            case ChangeType::Unchanged: ++unchanged; break;
+            case ChangeType::Modified: ++modified; break;
+            case ChangeType::New: ++newFiles; break;
+            case ChangeType::Deleted: ++deleted; break;
+        }
+    }
+
+    std::cout << "Summary: unchanged=" << unchanged
+              << ", modified=" << modified
+              << ", new=" << newFiles
+              << ", deleted=" << deleted << "\n";
+}
+
+
 CompareOutcome run_compare(Database& db, const fs::path& root, const std::string& baselineName) {
     CompareOutcome outcome;
     outcome.baselineRecords = load_baseline(db, baselineName);
+
+    std::cout << "baseline: " << std::endl;
+    std::cout << outcome.baselineRecords.size() << std::endl;
+
+    for(auto i : outcome.baselineRecords)
+    {
+        std::cout << i.absolutePath.string() << std::endl;
+    }
+
     outcome.currentRecords = scan_directory(root);
+
+    std::cout << "current: " << std::endl;
+    std::cout << outcome.currentRecords.size() << std::endl;
+
+    for(auto i : outcome.currentRecords)
+    {
+        std::cout << i.absolutePath.string() << std::endl;
+    }
+
     outcome.changes = compare_scans(outcome.baselineRecords, outcome.currentRecords);
+
+    print_change_summary_temp(outcome.changes);
+
     return outcome;
 }

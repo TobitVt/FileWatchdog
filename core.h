@@ -5,6 +5,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include "database.h"
 #include "file_record.h"
@@ -32,6 +33,10 @@ struct CompareOutcome {
     std::vector<FileRecord> currentRecords;
     std::vector<ChangeResult> changes;
 };
+
+// Prints a quick summary of how many files were unchanged, modified, new, or deleted.
+void print_change_summary_temp(const std::vector<ChangeResult>& results);
+
 
 std::string change_type_to_string(ChangeType type);
 std::string calculate_sha256(const fs::path& filepath);
