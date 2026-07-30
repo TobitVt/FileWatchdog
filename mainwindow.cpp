@@ -9,6 +9,8 @@
 #include <QColor>
 #include <QDebug>
 
+int BASELINE_COUNTER = 0;
+
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(new Ui::MainWindow) 
 {
     ui->setupUi(this);
@@ -35,8 +37,9 @@ void MainWindow::onCreateBaselineClicked() {
     }
 
     bool ok;
-    QString name = QInputDialog::getText(this, "Baseline name", "Name:", QLineEdit::Normal, "defaultbaseline", &ok);
-    if (!ok || name.isEmpty()) return;
+    BASELINE_COUNTER++;
+    QString name = "baseline" + QString::number(BASELINE_COUNTER); // QInputDialog::getText(this, "Baseline name", "Name:", QLineEdit::Normal, "defaultbaseline", &ok);
+    // if (!ok || name.isEmpty()) return;
 
     try {
         Database db(default_database_path());
@@ -54,8 +57,8 @@ void MainWindow::onCompareClicked() {
     }
 
     bool ok;
-    QString name = QInputDialog::getText(this, "Baseline name", "Name:", QLineEdit::Normal, "defaultbaseline", &ok);
-    if (!ok || name.isEmpty()) return;
+    QString name = "baseline" + QString::number(BASELINE_COUNTER);
+    // if (!ok || name.isEmpty()) return;
 
     try {
         Database db(default_database_path());
