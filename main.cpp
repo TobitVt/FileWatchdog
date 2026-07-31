@@ -1,5 +1,4 @@
 #include <iostream>
-#include <limits>
 
 #include "core.h"
 
@@ -12,15 +11,6 @@ void print_files(const std::vector<FileRecord>& files) {
         std::cout << file.relativePath << " | " << file.size << " bytes\n";
     }
     std::cout << "Total files scanned: " << files.size() << "\n";
-}
-
-// Prints the contents of a loaded baseline for inspection.
-void print_loaded_baseline(const std::vector<FileRecord>& files, const std::string& label) {
-    std::cout << "Loaded " << files.size() << " records from " << label << ":\n";
-    for (const auto& file : files) {
-        std::cout << file.relativePath.string() << " | " << file.size << " bytes | "
-                  << file.hash << "\n";
-    }
 }
 
 // Prints a quick summary of how many files were unchanged, modified, new, or deleted.
@@ -37,7 +27,7 @@ void print_change_summary(const std::vector<ChangeResult>& results) {
             case ChangeType::New: ++newFiles; break;
             case ChangeType::Deleted: ++deleted; break;
         }
-    }
+    } 
 
     std::cout << "Summary: unchanged=" << unchanged
               << ", modified=" << modified
@@ -88,7 +78,7 @@ int run_compare_mode(const fs::path& root, const std::string& baselineName) {
         return 1;
     }
 }
-// Entry point for the program. Supports CLI usage or the older interactive prompt.
+// Entry point for the program.
 int main(int argc, char* argv[]) {
     if (argc > 1) {
         std::string mode = argv[1];
@@ -123,74 +113,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::vector<ChangeResult> results;
-    fs::path root = fs::current_path();
-    std::string baselineName1 = "baseline1";
-    std::string baselineName2 = "baseline2";
-
-    std::cout << "Please provide the root folder to scan (press Enter for current directory): ";
-    std::string rootInput;
-    std::getline(std::cin, rootInput);
-    if (!rootInput.empty()) {
-        root = fs::path(rootInput);
-    }
-
-    std::cout << "What should the first baseline be called? (press Enter for baseline1): ";
-    std::string baseline1Input;
-    std::getline(std::cin, baseline1Input);
-    if (!baseline1Input.empty()) {
-        baselineName1 = baseline1Input;
-    }
-
-    try {
-        Database db(default_database_path());
-        std::vector<FileRecord> files1 = scan_directory(root);
-        print_files(files1);
-
-        if (!save_baseline(db, baselineName1, files1)) {
-            std::cerr << "Failed to save the first baseline.\n";
-            return 1;
-        }
-        std::cout << "Baseline 1 saved to database as '" << baselineName1 << "'.\n";
-
-        std::cout << "Please alter files in " << root << " now, then press Enter when done.\n";
-        std::cin.get();
-
-        std::cout << "What should the second baseline be called? (press Enter for baseline2): ";
-        std::string baseline2Input;
-        std::getline(std::cin, baseline2Input);
-        if (!baseline2Input.empty()) {
-            baselineName2 = baseline2Input;
-        }
-
-        std::vector<FileRecord> files2 = scan_directory(root);
-        print_files(files2);
-
-        if (!save_baseline(db, baselineName2, files2)) {
-            std::cerr << "Failed to save the second baseline.\n";
-            return 1;
-        }
-        std::cout << "Baseline 2 saved to database as '" << baselineName2 << "'.\n";
-
-        std::vector<FileRecord> loadedFile1 = load_baseline(db, baselineName1);
-        print_loaded_baseline(loadedFile1, "baseline 1");
-
-        std::vector<FileRecord> loadedFile2 = load_baseline(db, baselineName2);
-        print_loaded_baseline(loadedFile2, "baseline 2");
-
-        std::cout << "\nCompare results:\n";
-        results = compare_scans(loadedFile1, loadedFile2);
-
-        for (const auto& result : results) {
-            std::cout << result.path << " -> " << change_type_to_string(result.status) << "\n";
-        }
-
-        print_change_summary(results);
-    } catch (const std::exception& ex) {
-        std::cerr << "Error: " << ex.what() << "\n";
-        return 1;
-    }
-
-    return 0;
+    print_usage(argv[0]);
+    return 1;
 }
-

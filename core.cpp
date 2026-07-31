@@ -19,9 +19,9 @@ std::string default_database_path() {
     char buffer[MAX_PATH];
     GetModuleFileNameA(nullptr, buffer, MAX_PATH);
     fs::path exePath(buffer);
-    return (exePath.parent_path().parent_path() / "file_integrity.db").string();
+
+    return (exePath.parent_path() / "file_integrity.db").string();
 #else
-    // Fallback for non-Windows builds: use cwd-relative path.
     return "file_integrity.db";
 #endif
 }
