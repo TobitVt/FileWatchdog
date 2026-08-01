@@ -128,8 +128,9 @@ Core logic, CLI, and GUI are all complete and working:
 - Full change detection and classification, exposed identically through both the CLI and GUI
 - One baseline per folder, managed automatically — no manual naming required
 - Noise-folder exclusion and fault-tolerant scanning
+- a progress indicator during large scans (the scanning function already supports an optional progress callback)
 
-**Possible future extensions**: CSV/JSON export of results, a progress indicator during large scans (the scanning function already supports an optional progress callback), and a view for browsing/managing multiple saved baselines.
+**Possible future extensions**: CSV/JSON export of results, and a view for browsing/managing multiple saved baselines.
 
 **Core principle**: The scanning and comparison logic remains completely independent of persistence and UI — the CLI and GUI are two thin front-ends over one shared, tested core.
 
