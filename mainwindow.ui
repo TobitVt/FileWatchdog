@@ -36,6 +36,26 @@
      </widget>
     </item>
     <item>
+     <widget class="QLabel" name="progressLabel">
+      <property name="text">
+       <string></string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QProgressBar" name="progressBar">
+      <property name="visible">
+       <bool>false</bool>
+      </property>
+      <property name="minimum">
+       <number>0</number>
+      </property>
+      <property name="maximum">
+       <number>0</number>
+      </property>
+     </widget>
+    </item>
+    <item>
      <widget class="QTableWidget" name="resultsTable">
       <column>
        <property name="text">

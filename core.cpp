@@ -198,22 +198,22 @@ std::vector<FileRecord> load_baseline(Database& db, const std::string& baselineN
 }
 
 // Pure logic: scan + save, no printing, no exit codes. Throws on failure.
-ScanOutcome run_create(Database& db, const fs::path& root, const std::string& baselineName) {
+ScanOutcome run_create(Database& db, const fs::path& root, const std::string& baselineName, std::function<bool(const fs::path& current, std::size_t count)> onProgress)
+{
     ScanOutcome outcome;
-    outcome.files = scan_directory(root);
+    outcome.files = scan_directory(root, onProgress);
     if (!save_baseline(db, baselineName, outcome.files)) {
         throw std::runtime_error("Failed to save baseline '" + baselineName + "'.");
     }
     return outcome;
 }
 
-CompareOutcome run_compare(Database& db, const fs::path& root, const std::string& baselineName) {
+// Pure logic: load + scan + diff, no printing, no exit codes. Throws on failure.
+CompareOutcome run_compare(Database& db, const fs::path& root, const std::string& baselineName, std::function<bool(const fs::path& current, std::size_t count)> onProgress)
+{
     CompareOutcome outcome;
     outcome.baselineRecords = load_baseline(db, baselineName);
-    outcome.currentRecords = scan_directory(root);
+    outcome.currentRecords = scan_directory(root, onProgress);
     outcome.changes = compare_scans(outcome.baselineRecords, outcome.currentRecords);
-
-
-
     return outcome;
 }

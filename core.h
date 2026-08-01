@@ -52,5 +52,6 @@ bool save_baseline(Database& db, const std::string& baselineName, const std::vec
 std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline, const std::vector<FileRecord>& current);
 std::vector<FileRecord> load_baseline(Database& db, const std::string& baselineName);
 
-ScanOutcome run_create(Database& db, const fs::path& root, const std::string& baselineName);
-CompareOutcome run_compare(Database& db, const fs::path& root, const std::string& baselineName);
+ScanOutcome run_create(Database& db, const fs::path& root, const std::string& baselineName, std::function<bool(const fs::path& current, std::size_t count)> onProgress = nullptr);
+
+CompareOutcome run_compare(Database& db, const fs::path& root, const std::string& baselineName, std::function<bool(const fs::path& current, std::size_t count)> onProgress = nullptr);

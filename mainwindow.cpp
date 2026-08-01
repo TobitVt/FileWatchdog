@@ -8,6 +8,7 @@
 #include <QTableWidgetItem>
 #include <QColor>
 #include <QDebug>
+#include <QApplication>
 
 
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(new Ui::MainWindow) 
@@ -39,11 +40,24 @@ void MainWindow::onCreateBaselineClicked() {
     // One baseline per folder: name it after the folder path itself,
     QString name = QString::fromStdString(selectedRoot.u8string());
 
+    ui->progressBar->setVisible(true);
+        ui->progressLabel->setText("Scanning...");
+
     try {
         Database db(default_database_path());
-        ScanOutcome outcome = run_create(db, selectedRoot, name.toStdString());
+        ScanOutcome outcome = run_create(db, selectedRoot, name.toStdString(),
+            [this](const fs::path&, std::size_t count) {
+                ui->progressLabel->setText(QString("Scanned %1 files...").arg(count));
+                QApplication::processEvents();
+                return true; // never cancel
+            });
+
+        ui->progressBar->setVisible(false);
+        ui->progressLabel->clear();
         QMessageBox::information(this, "Done", QString("Saved baseline with %1 files.").arg(outcome.files.size()));
     } catch (const std::exception& ex) {
+        ui->progressBar->setVisible(false);
+        ui->progressLabel->clear();
         QMessageBox::critical(this, "Error", ex.what());
     }
 }
@@ -62,7 +76,19 @@ void MainWindow::onCompareClicked() {
             QMessageBox::warning(this, "No baseline", "No baseline named '" + name + "' exists yet. Create one first.");
             return;
         }
-        CompareOutcome outcome = run_compare(db, selectedRoot, name.toStdString());
+
+        ui->progressBar->setVisible(true);
+        ui->progressLabel->setText("Scanning...");
+
+        CompareOutcome outcome = run_compare(db, selectedRoot, name.toStdString(),
+            [this](const fs::path&, std::size_t count) {
+                ui->progressLabel->setText(QString("Scanned %1 files...").arg(count));
+                QApplication::processEvents();
+                return true;
+            });
+
+        ui->progressBar->setVisible(false);
+        ui->progressLabel->clear();
 
         qDebug() << "Compare found" << outcome.changes.size() << "changes.";
         ui->resultsTable->setRowCount(static_cast<int>(outcome.changes.size()));
@@ -89,6 +115,8 @@ void MainWindow::onCompareClicked() {
 
         ui->resultsTable->resizeColumnsToContents();
     } catch (const std::exception& ex) {
+        ui->progressBar->setVisible(false);
+        ui->progressLabel->clear();
         QMessageBox::critical(this, "Error", ex.what());
     }
 }
