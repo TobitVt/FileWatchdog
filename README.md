@@ -2,70 +2,35 @@
 
 ## Overview
 
-FileWatchdog is a C++ console-based prototype for a file integrity monitoring system. It scans directories, extracts file metadata, and builds structured records that can later be used to detect changes in files over time.
+FileWatchdog is a C++ file integrity monitoring tool with both a command-line interface and a Qt6 desktop GUI. It scans directories, hashes every file, and lets you save that snapshot as a named baseline — then later compare the current state of the folder against that baseline to see exactly what's new, modified, or deleted.
 
-This project is part of my learning path toward building a full cybersecurity-focused desktop application using Qt and C++.
+This project started as a console prototype and has since grown into a full CLI + GUI application, built as part of my learning path toward cybersecurity-focused desktop tooling in C++ and Qt.
 
 ---
 
 ## Purpose
 
-The goal of this project is to simulate the core idea behind file integrity monitoring systems used in cybersecurity:
+The goal is to demonstrate the core idea behind file integrity monitoring systems used in cybersecurity:
 
-- Detect modified files
-- Track new files
-- Identify deleted files (future step)
-- Maintain a trusted baseline of file states
+- Maintain a trusted baseline of file states (hash, size, last modified)
+- Detect files that have been modified since the baseline was taken
+- Detect files that are new
+- Detect files that have been deleted
 
 ---
 
-## Current Features
-
-This version implements the core file integrity monitoring workflow:
+## Features
 
 - Recursive directory scanning using `std::filesystem`
-- Extraction of file metadata:
-  - Absolute and relative paths
-  - File size
-  - Last modified timestamp
-- SHA-256 hashing for cryptographic file verification
-- Baseline persistence:
-  - Save scan results to JSON format
-  - Load previously saved baselines
-  - Structured, human-readable JSON output
-  - Automatically create parent folders for baseline files
-- File comparison engine:
-  - Compare current scan against baseline
-  - Classify files as unchanged, modified, new, or deleted
-  - Type-safe status using `ChangeType` enum
-  - Print a simple summary of counts for each change category
-- Command-line interface:
-  - `create` mode to generate a baseline
-  - `compare` mode to compare a folder against an existing baseline
-  - `help` for usage information
-- Modular function design for future extensibility
-- SQLite database storage for baselines (replacing JSON)
-
----
-
-## Planned Features
-
-Future development will include:
-
-- Support for multiple independent baselines
-- Qt6 GUI dashboard with:
-  - Folder selection
-  - Scan and baseline creation buttons
-  - Results displayed in a table with color-coding
-  - Summary statistics and progress bar
-- Export capabilities:
-  - CSV export for scan results
-  - JSON export for reports
-- Advanced features:
-  - Ignore rules for file types and folders
-  - Error handling for locked/unreadable files
-  - Performance optimizations for large folder hierarchies
-- Automated testing suite
+- SHA-256 hashing of every file for cryptographic verification
+- Automatic exclusion of noise folders during scans (`.git`, `build`, `.vs`, `.vscode`, `node_modules`)
+- Symlink-safe and fault-tolerant scanning (an unreadable file is skipped and logged, not fatal)
+- SQLite-backed baseline storage — durable, queryable, no manual file management
+- One baseline per monitored folder — no naming, no typos, Create and Compare always agree
+- Change detection engine that classifies every file as unchanged, modified, new, or deleted
+- Two interfaces sharing the exact same underlying scan/compare/storage logic:
+  - **Command-line interface** — `create`, `compare`, `help`
+  - **Qt6 desktop GUI** — folder picker, one-click baseline creation, and a color-coded results table
 
 ---
 
@@ -73,82 +38,100 @@ Future development will include:
 
 - **Language**: C++17
 - **Build System**: CMake 3.16+
-- **Standard Library**: `filesystem`, `chrono`, `vector`, `iostream`, `fstream`
+- **GUI Framework**: Qt6 (Widgets)
+- **Standard Library**: `filesystem`, `chrono`, `vector`, `iostream`, `fstream`, `unordered_map`
 - **Cryptography**: picosha2 (SHA-256 hashing)
-- **Data Serialization**: nlohmann/json (single-header JSON library)
-- **Compiler**: MSVC, MinGW, or GCC with C++17 support
-- **Console-based output** (current version; Qt6 GUI planned)
+- **Storage**: SQLite3
+- **Compiler**: MinGW-w64 (GCC 13.1.0) — MSVC/GCC on other platforms should also work with minor adjustment
+
+---
+
+## Architecture
+
+The project is split so that the CLI and GUI share one codebase for all real logic:
+
+```
+core.h / core.cpp         → scanning, hashing, comparing, baseline persistence
+                             (no I/O, no UI — pure logic, reusable everywhere)
+database.h / database.cpp → SQLite wrapper (baselines + baseline_files tables)
+main.cpp                  → CLI entry point (create / compare / help)
+gui_main.cpp,
+mainwindow.h/.cpp/.ui      → Qt6 GUI entry point and window
+```
+
+`CMakeLists.txt` builds a shared static library, `FileIntegrityCore`, containing all the core logic — both `FileIntegrityMonitor.exe` (CLI) and `FileIntegrityMonitorGui.exe` (GUI) link against it. Any fix or feature added to the core logic benefits both interfaces automatically, with zero duplication.
 
 ---
 
 ## Key Concepts Practiced
 
 - File system traversal with recursive directory iteration
-- Data modeling using structs and enums
 - Cryptographic hashing for integrity verification
 - Comparison algorithms and change detection logic
 - Type-safe status representation using `enum class`
-- Modular function design and separation of concerns
-- File I/O operations (text and structured formats)
-- CMake-based project configuration
-- Error handling and resource management
+- Clean separation of logic, persistence, and UI layers (shared core library linked into two separate executables)
+- SQLite integration via the C API
+- Qt6 Widgets: signals/slots, `QTableWidget`, `QFileDialog`, `QInputDialog`
+- CMake multi-target project configuration
+- Cross-platform text-encoding pitfalls (locale-dependent `fs::path` conversion on Windows/MinGW, fixed via UTF-8-explicit conversions)
+- Debugging and toolchain setup: CMake generators, MinGW/gdb integration with VS Code, IntelliSense configuration via `compile_commands.json`
 
 ---
 
 ## How to Build & Run
 
 ### Requirements
-- C++17 or later
-- CMake 3.16 or later
-- A compiler supporting `std::filesystem` (MSVC / MinGW / GCC)
+- C++17-capable compiler (MinGW-w64/GCC recommended; MSVC should also work)
+- CMake 3.16+
+- Qt6 (Widgets module) — required only for the GUI target
 
-### Build using CMake
+### Build
 ```bash
-cmake -S . -B build
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH="/path/to/Qt6/mingw_64"
 cmake --build build
 ```
 
-### Run
+### Run — CLI
 ```bash
-./build/FileIntegrityMonitor.exe help
-./build/FileIntegrityMonitor.exe create "C:/path/to/folder" baseline.json
-./build/FileIntegrityMonitor.exe compare "C:/path/to/folder" baseline.json
+build/FileIntegrityMonitor.exe help
+build/FileIntegrityMonitor.exe create "C:/path/to/folder" my_baseline
+build/FileIntegrityMonitor.exe compare "C:/path/to/folder" my_baseline
 ```
 
-### Example Output
+### Run — GUI
+```bash
+build/FileIntegrityMonitorGui.exe
 ```
+Browse to a folder, click **Create Baseline**, make some changes, then click **Compare Against Baseline** to see a color-coded results table (green = new, amber = modified, red = deleted, gray = unchanged).
+
+### Example CLI Output
+```bash
 Scanned files:
 docs/readme.txt | 1200 bytes
 docs/guide.txt | 850 bytes
 Total files scanned: 2
 
-Compare results:
+Compared against baseline: my_baseline
 docs/readme.txt -> unchanged
 docs/guide.txt -> modified
 docs/newfile.txt -> new
 docs/oldfile.txt -> deleted
-Summary: unchanged=1, modified=1, new=1, deleted=1
+Summary: unchanged=1, modified=1, new=1, deleted=1 
 ```
-
-The baseline is automatically saved as JSON for easy inspection and version control.
-
 ---
 
 ## Project Status
 
-This project has completed the core logic layer:
-- File scanning and hashing
-- Change detection and classification
-- Modular function architecture
+Core logic, CLI, and GUI are all complete and working:
 
-Next phases will focus on:
-- Refactoring into separate header/implementation files
-- Qt6 GUI for desktop application interface
-- Additional robustness and performance features
+- Scanning, hashing, and SQLite-backed baseline persistence
+- Full change detection and classification, exposed identically through both the CLI and GUI
+- One baseline per folder, managed automatically — no manual naming required
+- Noise-folder exclusion and fault-tolerant scanning
 
-The current CLI layer is a stepping stone for the future GUI and will later be mirrored by buttons, dialogs, and a results table in the desktop app.
+**Possible future extensions**: CSV/JSON export of results, a progress indicator during large scans (the scanning function already supports an optional progress callback), and a view for browsing/managing multiple saved baselines.
 
-**Core principle**: The scanning and comparison logic remains independent of persistence and UI layers, ensuring clean architecture for future extensions.
+**Core principle**: The scanning and comparison logic remains completely independent of persistence and UI — the CLI and GUI are two thin front-ends over one shared, tested core.
 
 ---
 
