@@ -9,7 +9,6 @@
 #include <QColor>
 #include <QDebug>
 
-int BASELINE_COUNTER = 0;
 
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(new Ui::MainWindow) 
 {
@@ -28,6 +27,7 @@ void MainWindow::onBrowseFolderClicked() {
         selectedRoot = dir.toStdString();
         ui->folderLabel->setText(dir);
     }
+
 }
 
 void MainWindow::onCreateBaselineClicked() {
@@ -36,10 +36,8 @@ void MainWindow::onCreateBaselineClicked() {
         return;
     }
 
-    bool ok;
-    BASELINE_COUNTER++;
-    QString name = "baseline" + QString::number(BASELINE_COUNTER); // QInputDialog::getText(this, "Baseline name", "Name:", QLineEdit::Normal, "defaultbaseline", &ok);
-    // if (!ok || name.isEmpty()) return;
+    // One baseline per folder: name it after the folder path itself,
+    QString name = QString::fromStdString(selectedRoot.u8string());
 
     try {
         Database db(default_database_path());
@@ -56,12 +54,14 @@ void MainWindow::onCompareClicked() {
         return;
     }
 
-    bool ok;
-    QString name = "baseline" + QString::number(BASELINE_COUNTER);
-    // if (!ok || name.isEmpty()) return;
+    QString name = QString::fromStdString(selectedRoot.u8string());
 
-    try {
+   try {
         Database db(default_database_path());
+        if (!db.baseline_exists(name.toStdString())) {
+            QMessageBox::warning(this, "No baseline", "No baseline named '" + name + "' exists yet. Create one first.");
+            return;
+        }
         CompareOutcome outcome = run_compare(db, selectedRoot, name.toStdString());
 
         qDebug() << "Compare found" << outcome.changes.size() << "changes.";

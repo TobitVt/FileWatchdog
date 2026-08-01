@@ -62,6 +62,10 @@ int run_create_mode(const fs::path& root, const std::string& baselineName) {
 int run_compare_mode(const fs::path& root, const std::string& baselineName) {
     try {
         Database db(default_database_path());
+        if (!db.baseline_exists(baselineName)) {
+            std::cerr << "Error: No baseline named '" << baselineName << "' exists. Run 'create' first.\n";
+            return 1;
+        }
         CompareOutcome outcome = run_compare(db, root, baselineName);
 
         print_files(outcome.currentRecords);

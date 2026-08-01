@@ -34,8 +34,7 @@ struct CompareOutcome {
     std::vector<ChangeResult> changes;
 };
 
-// Prints a quick summary of how many files were unchanged, modified, new, or deleted.
-void print_change_summary_temp(const std::vector<ChangeResult>& results);
+
 
 
 std::string change_type_to_string(ChangeType type);
@@ -43,9 +42,11 @@ std::string calculate_sha256(const fs::path& filepath);
 std::string format_last_modified(const fs::file_time_type& time);
 std::string default_database_path();
 
-std::vector<FileRecord> scan_directory(
-    const fs::path& root,
-    std::function<bool(const fs::path& current, std::size_t count)> onProgress = nullptr);
+std::vector<FileRecord> scan_directory(const fs::path& root, std::function<bool(const fs::path& current, std::size_t count)> onProgress = nullptr);
+
+// Returns true if any path component matches a name we always skip
+// (version control internals, build output, editor/OS artifacts).
+bool is_excluded_path(const fs::path& relativePath);
 
 bool save_baseline(Database& db, const std::string& baselineName, const std::vector<FileRecord>& files);
 std::vector<ChangeResult> compare_scans(const std::vector<FileRecord>& baseline, const std::vector<FileRecord>& current);

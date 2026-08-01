@@ -70,6 +70,22 @@ std::string format_last_modified(const fs::file_time_type& time) {
     return oss.str();
 }
 
+bool is_excluded_path(const fs::path& relativePath) {
+    static const std::vector<std::string> excludedNames = {
+        ".git", "build", ".vs", ".vscode", "node_modules", "portfolio_builds"
+    };
+
+    for (const auto& part : relativePath) {
+        const std::string partStr = part.u8string();
+        for (const auto& excluded : excludedNames) {
+            if (partStr == excluded) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Walks through a folder and collects metadata for every regular file it finds.
 std::vector<FileRecord> scan_directory(const fs::path& root, std::function<bool(const fs::path& current, std::size_t count)> onProgress)
 {
@@ -85,9 +101,12 @@ std::vector<FileRecord> scan_directory(const fs::path& root, std::function<bool(
     for (; it != end; ++it) {
         const auto& entry = *it;
 
-        // Skip symlinks explicitly — is_regular_file() follows them, which
-        // can throw on broken links or silently hash link targets.
         if (entry.is_symlink()) {
+            continue;
+        }
+
+        fs::path relPath = fs::relative(entry.path(), root);
+        if (is_excluded_path(relPath)) {
             continue;
         }
 
@@ -188,54 +207,13 @@ ScanOutcome run_create(Database& db, const fs::path& root, const std::string& ba
     return outcome;
 }
 
-void print_change_summary_temp(const std::vector<ChangeResult>& results)
-{
-    std::size_t unchanged = 0;
-    std::size_t modified = 0;
-    std::size_t newFiles = 0;
-    std::size_t deleted = 0;
-
-    for (const auto& result : results) {
-        switch (result.status) {
-            case ChangeType::Unchanged: ++unchanged; break;
-            case ChangeType::Modified: ++modified; break;
-            case ChangeType::New: ++newFiles; break;
-            case ChangeType::Deleted: ++deleted; break;
-        }
-    }
-
-    std::cout << "Summary: unchanged=" << unchanged
-              << ", modified=" << modified
-              << ", new=" << newFiles
-              << ", deleted=" << deleted << "\n";
-}
-
-
 CompareOutcome run_compare(Database& db, const fs::path& root, const std::string& baselineName) {
     CompareOutcome outcome;
     outcome.baselineRecords = load_baseline(db, baselineName);
-
-    std::cout << "baseline: " << std::endl;
-    std::cout << outcome.baselineRecords.size() << std::endl;
-
-    for(auto i : outcome.baselineRecords)
-    {
-        std::cout << i.absolutePath.string() << std::endl;
-    }
-
     outcome.currentRecords = scan_directory(root);
-
-    std::cout << "current: " << std::endl;
-    std::cout << outcome.currentRecords.size() << std::endl;
-
-    for(auto i : outcome.currentRecords)
-    {
-        std::cout << i.absolutePath.string() << std::endl;
-    }
-
     outcome.changes = compare_scans(outcome.baselineRecords, outcome.currentRecords);
 
-    print_change_summary_temp(outcome.changes);
+
 
     return outcome;
 }
