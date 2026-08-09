@@ -110,7 +110,7 @@ Browse to a folder, click **Create Baseline**, make some changes, then click **C
 *Main window — folder selected, ready to create or compare a baseline.*
 
 ![Compare results](screenshots/gui-compare-results.png)
-*Compare results table with color-coded New/Modified/Deleted/Unchanged rows.*
+*Compare results table with New/Modified/Deleted/Unchanged rows.*
 
 ### Example CLI Output
 ```bash
