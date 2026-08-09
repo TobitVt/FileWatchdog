@@ -99,13 +99,25 @@ void MainWindow::onCompareClicked() {
             auto* pathItem = new QTableWidgetItem(QString::fromStdString(change.path));
             auto* statusItem = new QTableWidgetItem(QString::fromStdString(change_type_to_string(change.status)));
 
-            QColor rowColor;
-            switch (change.status) {
-                case ChangeType::New:       rowColor = QColor(Qt::green); break; 
-                case ChangeType::Modified:  rowColor = QColor(Qt::blue); break; 
-                case ChangeType::Deleted:   rowColor = QColor(Qt::red); break; 
-                case ChangeType::Unchanged: rowColor = QColor(Qt::gray); break; 
-            }
+        QColor rowColor;
+
+        switch (change.status) {
+            case ChangeType::New:
+                rowColor = QColor("#1565C0");     
+                break;
+
+            case ChangeType::Modified:
+                rowColor = QColor("#F9A825");     
+                break;
+
+            case ChangeType::Deleted:
+                rowColor = QColor("#C62828");      
+                break;
+
+            case ChangeType::Unchanged:
+                rowColor = QColor("#2E7D32");     
+                break;
+        }
             pathItem->setBackground(rowColor);
             statusItem->setBackground(rowColor);
 

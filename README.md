@@ -102,7 +102,15 @@ build/FileIntegrityMonitor.exe compare "C:/path/to/folder" my_baseline
 ```bash
 build/FileIntegrityMonitorGui.exe
 ```
-Browse to a folder, click **Create Baseline**, make some changes, then click **Compare Against Baseline** to see a color-coded results table (green = new, amber = modified, red = deleted, gray = unchanged).
+Browse to a folder, click **Create Baseline**, make some changes, then click **Compare Against Baseline** to see the results table (new, modified, deleted, unchanged).
+
+### Screenshots
+
+![File Integrity Monitor GUI](screenshots/gui-main.png)
+*Main window — folder selected, ready to create or compare a baseline.*
+
+![Compare results](screenshots/gui-compare-results.png)
+*Compare results table with color-coded New/Modified/Deleted/Unchanged rows.*
 
 ### Example CLI Output
 ```bash
